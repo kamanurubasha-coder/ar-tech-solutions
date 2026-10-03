@@ -7,6 +7,7 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/artechsolutions';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Basha@123';
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -53,6 +54,20 @@ const sendEmail = async ({ name, email, phone, service, message }) => {
   await transporter.sendMail(mailOptions);
 };
 
+const authenticateAdmin = (req, res, next) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.replace('Basic ', '');
+  const decoded = Buffer.from(token || '', 'base64').toString('utf-8');
+  const [username, password] = decoded.split(':');
+
+  if (username === 'admin' && password === ADMIN_PASSWORD) {
+    return next();
+  }
+
+  res.setHeader('WWW-Authenticate', 'Basic realm="Admin Area"');
+  return res.status(401).json({ success: false, message: 'Unauthorized' });
+};
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -71,6 +86,31 @@ app.get('/portfolio', (req, res) => {
 
 app.get('/contact', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'contact.html'));
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+app.get('/api/enquiries', authenticateAdmin, async (req, res) => {
+  try {
+    const enquiries = await Contact.find().sort({ createdAt: -1 });
+    res.json({ success: true, data: enquiries });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to load enquiries' });
+  }
+});
+
+app.delete('/api/enquiries/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const deleted = await Contact.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Enquiry not found' });
+    }
+    return res.json({ success: true, message: 'Enquiry deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to delete enquiry' });
+  }
 });
 
 app.post('/api/contact', async (req, res) => {
